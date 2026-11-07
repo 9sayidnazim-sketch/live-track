@@ -2,6 +2,19 @@
 
 Updated 2026-11-07.
 
+## Live Deployment Links
+
+- **GitHub Repository**: [https://github.com/9sayidnazim-sketch/live-track](https://github.com/9sayidnazim-sketch/live-track)
+- **Vercel Production**: [https://live-track-phi.vercel.app](https://live-track-phi.vercel.app)
+  - Settings: [https://live-track-phi.vercel.app/settings](https://live-track-phi.vercel.app/settings)
+  - API Health: [https://live-track-phi.vercel.app/api/health](https://live-track-phi.vercel.app/api/health)
+- **AWS Lambda (Function URL)**: [https://ev6xt4zg2cqw7fscat3mkpckzu0cloas.lambda-url.us-east-1.on.aws/](https://ev6xt4zg2cqw7fscat3mkpckzu0cloas.lambda-url.us-east-1.on.aws/)
+  - Settings: [https://ev6xt4zg2cqw7fscat3mkpckzu0cloas.lambda-url.us-east-1.on.aws/settings](https://ev6xt4zg2cqw7fscat3mkpckzu0cloas.lambda-url.us-east-1.on.aws/settings)
+  - API Health: [https://ev6xt4zg2cqw7fscat3mkpckzu0cloas.lambda-url.us-east-1.on.aws/api/health](https://ev6xt4zg2cqw7fscat3mkpckzu0cloas.lambda-url.us-east-1.on.aws/api/health)
+- **Local Server**: [http://127.0.0.1:3000](http://127.0.0.1:3000)
+
+---
+
 ## Completed Features
 
 1. **Brand Identity: Columbus**:
@@ -57,4 +70,4 @@ Updated 2026-11-07.
 
 9. **Verification**:
    - All 47 automated tests passing (`npm test`).
-   - Server running and healthy on `http://127.0.0.1:3000`.
+   - Verified live responses on both Vercel (`https://live-track-phi.vercel.app`) and AWS Lambda (`https://ev6xt4zg2cqw7fscat3mkpckzu0cloas.lambda-url.us-east-1.on.aws/`).
