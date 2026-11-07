@@ -40,10 +40,12 @@ const S = {
   map: null,
   car: null,
   glider: null,
+  accuracyHalo: null,
   trailLine: null,
   trail: [],
   last: null, // latest fix shown
   lastId: 0, // highest position id shown, so history and stream never double up
+  lastFixTime: null,
   follow: true,
   lastDraw: 0,
   stream: null,
@@ -134,6 +136,11 @@ function addPoint(point, { instant = false } = {}) {
   const prev = S.last;
   S.last = fix;
 
+  const now = performance.now();
+  const deltaMs = S.lastFixTime ? now - S.lastFixTime : 1000;
+  S.lastFixTime = now;
+  const glideDuration = instant ? 0 : Math.min(Math.max(deltaMs, 350), 2500);
+
   if (!S.car) {
     const markerColor = params.get('color') || getMarkerColor();
     const markerType = params.get('type') || getMarkerType();
@@ -143,10 +150,17 @@ function addPoint(point, { instant = false } = {}) {
     centreOn(S.map, fix, { cover: coverEl() });
     setFollow(true);
   } else {
-    if (prev && distanceM(prev, fix) >= 5) S.car.setHeading(bearingDeg(prev, fix));
+    if (typeof point.heading === 'number' && !isNaN(point.heading)) {
+      S.car.setHeading(point.heading);
+    } else if (prev && distanceM(prev, fix) >= 3) {
+      S.car.setHeading(bearingDeg(prev, fix));
+    }
     if (instant) S.glider.place(fix);
-    else S.glider.glideTo(fix, READ_INTERVAL_MS);
+    else S.glider.glideTo(fix, glideDuration);
   }
+
+  updateAccuracyHalo(fix);
+
   S.trail.push([fix.lat, fix.lng]);
   if (S.trail.length > TRAIL_LENGTH) S.trail.shift();
   drawTrail({ lat: fix.lat, lng: fix.lng }, true);
@@ -154,9 +168,29 @@ function addPoint(point, { instant = false } = {}) {
   setStatus('live');
 }
 
+function updateAccuracyHalo(fix) {
+  if (!S.map || !fix) return;
+  const radius = Math.max(fix.accuracy ?? 15, 3);
+  if (!S.accuracyHalo) {
+    S.accuracyHalo = L.circle([fix.lat, fix.lng], {
+      radius,
+      color: '#a855f7',
+      weight: 1.2,
+      opacity: 0.45,
+      fillColor: '#a855f7',
+      fillOpacity: 0.08,
+      interactive: false,
+    }).addTo(S.map);
+  } else {
+    S.accuracyHalo.setLatLng([fix.lat, fix.lng]);
+    S.accuracyHalo.setRadius(radius);
+  }
+}
+
 /** Called on every animation frame while the car glides. */
 function onFrame(point) {
   S.car.setLatLng(point);
+  if (S.accuracyHalo) S.accuracyHalo.setLatLng([point.lat, point.lng]);
   if (S.follow) centreOn(S.map, point, { cover: coverEl() });
   drawTrail(point, false);
 }

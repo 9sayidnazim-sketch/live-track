@@ -1,6 +1,7 @@
 // Columbus Live Tracking: clean roundish UI/UX, automatic compass, free positioning,
 // custom vehicle marker & pointer colors, typeahead autocomplete, and Supabase cloud sync.
 import {
+  angleDelta,
   bearingDeg,
   distanceM,
   formatAccuracy,
@@ -23,12 +24,17 @@ import { api, ApiError } from './api-client.js';
 import { getSession, readStore, setSession, writeStore, getMarkerColor, getMarkerType } from './store.js';
 import { $ } from './common.js';
 
-const READ_INTERVAL_MS = 10_000;
+const READ_INTERVAL_MS = 1000;
 const TRAIL_LENGTH = 100;
 const MAX_QUEUE = 200;
 const OFF_ROUTE_M = 60;
 const ROUTE_RETRY_MS = 20_000;
-const GPS_OPTIONS = { enableHighAccuracy: true, timeout: 9_000, maximumAge: 1_000 };
+const GPS_OPTIONS = { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 };
+const MAX_ACCURACY_THRESHOLD_M = 45;
+const STATIONARY_SPEED_THRESHOLD_MS = 0.8;
+const STATIONARY_DISTANCE_DEADBAND_M = 2.5;
+const MIN_DISTANCE_FOR_HEADING_CALC_M = 3.0;
+const MAX_REALISTIC_SPEED_MS = 70;
 const BANNER_MS = 6_000;
 const TAP_LABEL = 'Destination Pin';
 
@@ -113,6 +119,12 @@ const S = {
   trailVisible: readStore().trailVisible ?? true,
   follow: true,
   timer: null,
+  watchId: null,
+  lastFixTime: null,
+  lastFixReceivedAt: 0,
+  lastCloudSyncAt: 0,
+  lastCloudSyncFix: null,
+  lastCloudSyncHeading: 0,
   nextReadAt: 0,
   readBusy: false,
   queue: [],
@@ -395,6 +407,11 @@ function startRun(position) {
   S.waiting = false;
   S.fix = fix;
   S.prevFix = null;
+  S.lastFixTime = performance.now();
+  S.lastFixReceivedAt = Date.now();
+  S.lastCloudSyncAt = 0;
+  S.lastCloudSyncFix = null;
+  S.lastCloudSyncHeading = 0;
   S.trail = [[fix.lat, fix.lng]];
   S.route = null;
   S.routeCursor = 0;
@@ -412,22 +429,31 @@ function startRun(position) {
 
   S.layers.a.setLatLng([fix.lat, fix.lng]).addTo(S.map);
   S.glider.place(fix);
+  updateAccuracyHalo(fix);
 
   enqueue(fix);
   acquireWakeLock();
   refreshRouteIfNeeded(fix);
   renderAll();
 
-  scheduleNextRead(run);
+  startGpsWatch(run);
 }
 
 function stopTracking(reason) {
   S.run += 1;
   S.status = reason === 'arrived' ? 'arrived' : 'stopped';
   S.waiting = false;
+  if (S.watchId !== null) {
+    navigator.geolocation.clearWatch(S.watchId);
+    S.watchId = null;
+  }
   clearTimeout(S.timer);
   S.timer = null;
   S.glider?.stop();
+  if (S.layers?.accuracy) {
+    S.layers.accuracy.remove();
+    S.layers.accuracy = null;
+  }
   releaseWakeLock();
   renderAll();
 
@@ -437,31 +463,45 @@ function stopTracking(reason) {
   }
 }
 
-function scheduleNextRead(run) {
-  if (S.status !== 'tracking' || S.run !== run) return;
-  S.nextReadAt = Date.now() + READ_INTERVAL_MS;
+function startGpsWatch(run) {
+  if (S.watchId !== null) {
+    navigator.geolocation.clearWatch(S.watchId);
+    S.watchId = null;
+  }
   clearTimeout(S.timer);
-  S.timer = setTimeout(() => readGps(run), READ_INTERVAL_MS);
-}
 
-function readGps(run) {
-  if (S.status !== 'tracking' || S.run !== run) return;
-  S.readBusy = true;
-  navigator.geolocation.getCurrentPosition(
+  S.watchId = navigator.geolocation.watchPosition(
     (position) => {
-      S.readBusy = false;
       if (S.status !== 'tracking' || S.run !== run) return;
       handleFix(position);
-      scheduleNextRead(run);
+      resetGpsWatchdog(run);
     },
     (error) => {
-      S.readBusy = false;
       if (S.status !== 'tracking' || S.run !== run) return;
       onReadFailure(error);
-      scheduleNextRead(run);
     },
     GPS_OPTIONS,
   );
+
+  resetGpsWatchdog(run);
+}
+
+function resetGpsWatchdog(run) {
+  clearTimeout(S.timer);
+  // Watchdog: fallback ping every 12s if hardware stops streaming
+  S.timer = setTimeout(() => {
+    if (S.status !== 'tracking' || S.run !== run) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (S.status === 'tracking' && S.run === run) {
+          handleFix(pos);
+          resetGpsWatchdog(run);
+        }
+      },
+      () => {},
+      GPS_OPTIONS,
+    );
+  }, 12_000);
 }
 
 function onReadFailure(error) {
@@ -480,42 +520,160 @@ function onReadFailure(error) {
 function handleFix(position) {
   const fix = toFix(position);
   const prev = S.fix;
+  const now = performance.now();
+  S.lastFixReceivedAt = Date.now();
+
+  // 1. Accuracy Gate / Outlier Rejection:
+  // If we already have a fix, ignore fixes with degraded accuracy (> 45m)
+  if (prev && fix.accuracy !== null) {
+    if (fix.accuracy > MAX_ACCURACY_THRESHOLD_M) {
+      if (els.acc) els.acc.textContent = formatAccuracy(fix.accuracy);
+      if (els.updated) els.updated.textContent = formatClock(fix.receivedAt);
+      return;
+    }
+
+    const elapsedS = Math.max(0.1, (fix.time.getTime() - prev.time.getTime()) / 1000);
+    const dist = distanceM(prev, fix);
+
+    // Speed sanity check (teleportation rejection)
+    if (elapsedS > 0) {
+      const calcSpeed = dist / elapsedS;
+      if (calcSpeed > MAX_REALISTIC_SPEED_MS && fix.accuracy > 15) {
+        return;
+      }
+    }
+  }
+
   S.waiting = false;
+  renderStatus();
+
+  let isStationary = false;
+  if (prev) {
+    const elapsedS = Math.max(0.1, (fix.time.getTime() - prev.time.getTime()) / 1000);
+    const dist = distanceM(prev, fix);
+    const rawSpeed = fix.speed ?? (dist / elapsedS);
+    fix.estimatedSpeed = dist / elapsedS;
+
+    // 2. Stationary Jitter Suppression & Deadband:
+    // If movement < 2.5m or speed is low & distance < 4m, suppress micro-jitter
+    if (dist < STATIONARY_DISTANCE_DEADBAND_M || (rawSpeed < STATIONARY_SPEED_THRESHOLD_MS && dist < 4.0)) {
+      isStationary = true;
+      fix.speed = 0;
+      fix.estimatedSpeed = 0;
+    } else {
+      S.totalDistanceM += dist;
+    }
+
+    // 3. Heading Calculation:
+    // Only update heading when moving, avoiding erratic spinning when stationary
+    if (!isStationary) {
+      const hasHardwareHeading =
+        typeof position.coords.heading === 'number' &&
+        !isNaN(position.coords.heading) &&
+        position.coords.heading >= 0;
+      if (hasHardwareHeading && rawSpeed > 1.0) {
+        S.heading = position.coords.heading;
+      } else if (dist >= MIN_DISTANCE_FOR_HEADING_CALC_M) {
+        S.heading = bearingDeg(prev, fix);
+      }
+      S.car?.setHeading(S.heading);
+      updateCompassUi(S.heading);
+    }
+  } else {
+    // First fix
+    if (
+      typeof position.coords.heading === 'number' &&
+      !isNaN(position.coords.heading) &&
+      position.coords.heading >= 0
+    ) {
+      S.heading = position.coords.heading;
+      S.car?.setHeading(S.heading);
+      updateCompassUi(S.heading);
+    }
+  }
+
   S.prevFix = prev;
   S.fix = fix;
 
-  if (prev) {
-    const elapsedS = (fix.time.getTime() - prev.time.getTime()) / 1000;
-    const dist = distanceM(prev, fix);
-    if (dist > 1) S.totalDistanceM += dist;
-    if (elapsedS > 0) fix.estimatedSpeed = dist / elapsedS;
+  // 4. Glider Interpolation:
+  // Smoothly glide over actual elapsed time between fixes
+  const deltaMs = S.lastFixTime ? now - S.lastFixTime : 1000;
+  S.lastFixTime = now;
+  const glideDuration = isStationary ? 250 : Math.min(Math.max(deltaMs, 350), 2000);
 
-    const bearing = typeof position.coords.heading === 'number' && !isNaN(position.coords.heading)
-      ? position.coords.heading
-      : bearingDeg(prev, fix);
-    S.heading = bearing;
-    S.car?.setHeading(bearing);
-    updateCompassUi(bearing);
+  if (!isStationary) {
+    S.trail.push([fix.lat, fix.lng]);
+    if (S.trail.length > TRAIL_LENGTH) S.trail.shift();
   }
 
-  S.trail.push([fix.lat, fix.lng]);
-  if (S.trail.length > TRAIL_LENGTH) S.trail.shift();
+  S.glider?.glideTo(fix, glideDuration);
 
-  S.glider?.glideTo(fix, READ_INTERVAL_MS);
-  enqueue(fix);
+  // 5. Visual Accuracy Halo
+  updateAccuracyHalo(fix);
+
+  // 6. Telemetry Enqueue (throttled)
+  enqueueThrottled(fix, isStationary);
 
   if (S.destination && hasArrived(fix, S.destination)) {
     arrive();
     return;
   }
 
-  refreshRouteIfNeeded(fix);
+  if (!isStationary) {
+    refreshRouteIfNeeded(fix);
+  }
   renderAll();
+}
+
+function updateAccuracyHalo(fix) {
+  if (!S.layers || !S.map || !fix) return;
+  const radius = Math.max(fix.accuracy ?? 15, 3);
+  if (!S.layers.accuracy) {
+    S.layers.accuracy = L.circle([fix.lat, fix.lng], {
+      radius,
+      color: '#0d9488',
+      weight: 1.2,
+      opacity: 0.45,
+      fillColor: '#0d9488',
+      fillOpacity: 0.08,
+      interactive: false,
+    }).addTo(S.map);
+  } else {
+    S.layers.accuracy.setLatLng([fix.lat, fix.lng]);
+    S.layers.accuracy.setRadius(radius);
+  }
+}
+
+function enqueueThrottled(fix, isStationary) {
+  const now = Date.now();
+  const lastFix = S.lastCloudSyncFix;
+  const timeSinceLastSync = now - S.lastCloudSyncAt;
+
+  let shouldSync = false;
+  if (!lastFix) {
+    shouldSync = true;
+  } else if (timeSinceLastSync >= 3000) {
+    shouldSync = true;
+  } else if (!isStationary) {
+    const dist = distanceM(lastFix, fix);
+    const headingDiff = Math.abs(angleDelta(S.lastCloudSyncHeading || 0, S.heading));
+    if (dist >= 4.0 || headingDiff >= 15) {
+      shouldSync = true;
+    }
+  }
+
+  if (shouldSync) {
+    S.lastCloudSyncAt = now;
+    S.lastCloudSyncFix = fix;
+    S.lastCloudSyncHeading = S.heading;
+    enqueue(fix);
+  }
 }
 
 function arrive() {
   S.status = 'arrived';
   notify('Arrived at destination!', 'success', 0);
+  if (S.fix) enqueue(S.fix);
   stopTracking('arrived');
 }
 
@@ -548,6 +706,7 @@ function ensureMap() {
     route: L.polyline([], { ...line, color: '#0d9488', weight: 6, opacity: 1 }).addTo(S.map),
     a: L.marker([0, 0], { icon: pinIcon('A', 'start'), interactive: false, keyboard: false, zIndexOffset: 500 }),
     b: L.marker([0, 0], { icon: pinIcon('B', 'end'), interactive: false, keyboard: false, zIndexOffset: 400 }),
+    accuracy: null,
   };
 
   S.glider = new Glider({ onFrame: onGlideFrame });
@@ -556,6 +715,7 @@ function ensureMap() {
 
 function onGlideFrame(point, progress) {
   S.car?.setLatLng(point);
+  if (S.layers?.accuracy) S.layers.accuracy.setLatLng([point.lat, point.lng]);
   if (S.follow) centreOn(S.map, point, { cover: coverEl() });
   drawLines(point, false);
 
@@ -961,12 +1121,9 @@ function tickReadings() {
     if (els.fill) els.fill.style.transform = 'scaleX(0)';
     return;
   }
-  if (S.readBusy) {
-    if (els.fill) els.fill.style.transform = 'scaleX(0)';
-    return;
-  }
-  const left = Math.max(0, S.nextReadAt - Date.now());
-  if (els.fill) els.fill.style.transform = `scaleX(${(left / READ_INTERVAL_MS).toFixed(3)})`;
+  const ageMs = Date.now() - (S.lastFixReceivedAt || Date.now());
+  const freshness = Math.max(0, 1 - ageMs / 5000);
+  if (els.fill) els.fill.style.transform = `scaleX(${freshness.toFixed(3)})`;
 }
 
 function tickTripTimer() {
