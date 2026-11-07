@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>API documentation | Columbus</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="page">
+
+  <header class="page-head">
+    <a class="back" href="index.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      Back to the map
+    </a>
+    <a class="back" href="settings.html">Settings</a>
+  </header>
+
+  <main class="page-body">
+    <h1 class="page-title">API documentation</h1>
+
+    <section class="section" id="start">
+      <h2>Start here</h2>
+      <p>Other apps read and write Columbus through a small JSON API. Every response is JSON, and CORS is enabled, so browser apps on any origin can call it. This server's base address is <code data-origin>{{ORIGIN}}</code>.</p>
+      <p>Create a key on the Settings page, or call <code>POST /api/sessions</code>. Then send the key in a header with each request.</p>
+      <ul class="toc">
+        <li><a href="#auth">Authentication</a></li>
+        <li><a href="#create-session">Create a session</a></li>
+        <li><a href="#post-location">Save a position</a></li>
+        <li><a href="#latest">Latest position</a></li>
+        <li><a href="#history">Trail</a></li>
+        <li><a href="#stream">Live stream</a></li>
+        <li><a href="#manage">Manage keys and links</a></li>
+        <li><a href="#data">Data format</a></li>
+        <li><a href="#errors">Errors</a></li>
+      </ul>
+    </section>
+
+    <section class="section" id="auth">
+      <h2>Authentication</h2>
+      <p>Send your API key in the <code>x-api-key</code> header. Keep it secret: anyone with the key can read and write this session.</p>
+      <pre id="ex-auth">curl -H "x-api-key: YOUR_API_KEY" "{{ORIGIN}}/api/session/SESSION_ID"</pre>
+      <p>A share link gives read-only access. Read endpoints accept <code>share=TOKEN</code> in the query string, in place of a key. Share tokens cannot save positions or manage keys. Browsers cannot send headers with <code>EventSource</code>, so the live viewer uses the share token.</p>
+    </section>
+
+    <section class="section" id="create-session">
+      <div class="endpoint">
+        <h3><span class="method" data-method="POST">POST</span><span class="route-path">/api/sessions</span></h3>
+        <p>Creates a session with its own API key and share token. No key is needed. The key is returned only once, so save it.</p>
+        <div class="copy"><pre id="ex-create">curl -X POST "{{ORIGIN}}/api/sessions"</pre><button class="btn" type="button" data-copy="ex-create">Copy</button></div>
+        <h4>Response, 201 Created</h4>
+        <pre>{
+  "session_id": "ses_4EduMzbopj_r",
+  "api_key": "lt_4PR…",
+  "share_token": "lts_1…",
+  "created_at": "2026-11-06T13:38:42.534Z"
+}</pre>
+      </div>
+    </section>
+
+    <section class="section" id="post-location">
+      <div class="endpoint">
+        <h3><span class="method" data-method="POST">POST</span><span class="route-path">/api/location</span></h3>
+        <p>Saves one position for the session that owns the key. The tracker sends one every 10 seconds. Needs an API key. A share token gets 403.</p>
+        <h4>Body</h4>
+        <table class="spec">
+          <tr><th><code>lat</code></th><td>Required. Latitude from -90 to 90.</td></tr>
+          <tr><th><code>lng</code></th><td>Required. Longitude from -180 to 180.</td></tr>
+          <tr><th><code>accuracy</code></th><td>Optional. Accuracy radius in metres, zero or more.</td></tr>
+          <tr><th><code>speed</code></th><td>Optional. Speed in metres per second, zero or more.</td></tr>
+          <tr><th><code>timestamp</code></th><td>Optional. ISO 8601 text or epoch milliseconds, for the time of the GPS fix. Defaults to the time the server received the request.</td></tr>
+          <tr><th><code>session_id</code></th><td>Optional. If sent, it must match the key's session.</td></tr>
+        </table>
+        <div class="copy"><pre id="ex-post">curl -X POST "{{ORIGIN}}/api/location" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"lat": 51.5007, "lng": -0.1246, "accuracy": 8, "speed": 3.2}'</pre><button class="btn" type="button" data-copy="ex-post">Copy</button></div>
+        <h4>Response, 201 Created</h4>
+        <pre>{
+  "id": 42,
+  "session_id": "ses_4EduMzbopj_r",
+  "lat": 51.5007,
+  "lng": -0.1246,
+  "accuracy": 8,
+  "speed": 3.2,
+  "timestamp": "2026-11-06T13:40:02.118Z"
+}</pre>
+      </div>
+    </section>
+
+    <section class="section" id="latest">
+      <div class="endpoint">
+        <h3><span class="method" data-method="GET">GET</span><span class="route-path">/api/location/latest</span></h3>
+        <p>Returns the newest position for the session. Works with an API key or a share token. Returns 404 until the first position arrives.</p>
+        <table class="spec">
+          <tr><th><code>session_id</code></th><td>Optional with an API key, which already identifies the session. Required with a share token.</td></tr>
+          <tr><th><code>share</code></th><td>Optional. A share token, used instead of the key.</td></tr>
+        </table>
+        <div class="copy"><pre id="ex-latest">curl -H "x-api-key: YOUR_API_KEY" "{{ORIGIN}}/api/location/latest?session_id=SESSION_ID"</pre><button class="btn" type="button" data-copy="ex-latest">Copy</button></div>
+        <h4>Response, 200 OK</h4>
+        <pre>{
+  "id": 42,
+  "session_id": "ses_4EduMzbopj_r",
+  "lat": 51.5007,
+  "lng": -0.1246,
+  "accuracy": 8,
+  "speed": 3.2,
+  "timestamp": "2026-11-06T13:40:02.118Z"
+}</pre>
+      </div>
+    </section>
+
+    <section class="section" id="history">
+      <div class="endpoint">
+        <h3><span class="method" data-method="GET">GET</span><span class="route-path">/api/location/history</span></h3>
+        <p>Returns the most recent positions, oldest first, so the array reads as a trail. Works with an API key or a share token.</p>
+        <table class="spec">
+          <tr><th><code>session_id</code></th><td>Optional with an API key. Required with a share token.</td></tr>
+          <tr><th><code>limit</code></th><td>Optional. A whole number from 1 to 1000. Defaults to 100.</td></tr>
+          <tr><th><code>share</code></th><td>Optional. A share token, used instead of the key.</td></tr>
+        </table>
+        <div class="copy"><pre id="ex-history">curl -H "x-api-key: YOUR_API_KEY" "{{ORIGIN}}/api/location/history?limit=30"</pre><button class="btn" type="button" data-copy="ex-history">Copy</button></div>
+        <h4>Response, 200 OK</h4>
+        <pre>{
+  "session_id": "ses_4EduMzbopj_r",
+  "count": 2,
+  "points": [
+    { "id": 41, "session_id": "ses_4EduMzbopj_r", "lat": 51.5006, "lng": -0.1248, "accuracy": 9, "speed": 3.0, "timestamp": "2026-11-06T13:39:52.094Z" },
+    { "id": 42, "session_id": "ses_4EduMzbopj_r", "lat": 51.5007, "lng": -0.1246, "accuracy": 8, "speed": 3.2, "timestamp": "2026-11-06T13:40:02.118Z" }
+  ]
+}</pre>
+      </div>
+    </section>
+
+    <section class="section" id="stream">
+      <div class="endpoint">
+        <h3><span class="method" data-method="GET">GET</span><span class="route-path">/api/session/:id/stream</span></h3>
+        <p>Live updates as Server-Sent Events. The first event is <code>ready</code>, which carries the latest position or <code>null</code>. Each new position then arrives as a <code>location</code> event. If the key is replaced or revoked, or the share link is reset, a <code>revoked</code> event arrives and the stream ends.</p>
+        <table class="spec">
+          <tr><th><code>x-api-key</code></th><td>Header. Use it from servers and apps.</td></tr>
+          <tr><th><code>share</code></th><td>Query string. Use it for browser viewers, because <code>EventSource</code> cannot send headers.</td></tr>
+        </table>
+        <div class="copy"><pre id="ex-stream">curl -N -H "x-api-key: YOUR_API_KEY" "{{ORIGIN}}/api/session/SESSION_ID/stream"</pre><button class="btn" type="button" data-copy="ex-stream">Copy</button></div>
+        <h4>Browser viewer</h4>
+        <div class="copy"><pre id="ex-browser">const stream = new EventSource("{{ORIGIN}}/api/session/SESSION_ID/stream?share=SHARE_TOKEN");
+stream.addEventListener("location", (event) =&gt; {
+  const point = JSON.parse(event.data); // { id, lat, lng, accuracy, speed, timestamp }
+  console.log(point.lat, point.lng);
+});</pre><button class="btn" type="button" data-copy="ex-browser">Copy</button></div>
+        <h4>Events</h4>
+        <table class="spec">
+          <tr><th><code>ready</code></th><td><code>{ "session_id", "latest" }</code>. Sent once, when the stream opens.</td></tr>
+          <tr><th><code>location</code></th><td>One position, in the same shape as the save response.</td></tr>
+          <tr><th><code>revoked</code></th><td><code>{ "session_id", "reason" }</code>. The stream ends after this event.</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" id="manage">
+      <div class="endpoint">
+        <h3><span class="method" data-method="GET">GET</span><span class="route-path">/api/session/:id</span></h3>
+        <p>Session details for the key's own session. The key itself is never returned, only its last four characters.</p>
+        <pre>{ "session_id": "ses_4EduMzbopj_r", "active": true, "created_at": "2026-11-06T13:38:42.534Z", "api_key_hint": "HhZo" }</pre>
+      </div>
+
+      <div class="endpoint">
+        <h3><span class="method" data-method="POST">POST</span><span class="route-path">/api/session/:id/key</span></h3>
+        <p>Replaces the API key. The old key stops working straight away, and streams opened with it are closed. The history stays. Returns the new key once.</p>
+        <pre>{ "session_id": "ses_4EduMzbopj_r", "api_key": "lt_…" }</pre>
+      </div>
+
+      <div class="endpoint">
+        <h3><span class="method" data-method="DELETE">DELETE</span><span class="route-path">/api/session/:id/key</span></h3>
+        <p>Revokes the key. The key and the share link stop working, every open stream ends, and the tracker stops. Positions already stored are kept.</p>
+        <pre>{ "session_id": "ses_4EduMzbopj_r", "revoked_at": "2026-11-06T14:02:10.441Z" }</pre>
+      </div>
+
+      <div class="endpoint">
+        <h3><span class="method" data-method="POST">POST</span><span class="route-path">/api/session/:id/share-link</span></h3>
+        <p>Replaces the share token. The old link stops working, and anyone viewing with it is disconnected.</p>
+        <pre>{ "session_id": "ses_4EduMzbopj_r", "share_token": "lts_…" }</pre>
+      </div>
+
+      <div class="endpoint">
+        <h3><span class="method" data-method="GET">GET</span><span class="route-path">/api/health</span></h3>
+        <p>Checks that the server is running. Needs no key.</p>
+        <pre>{ "ok": true, "time": "2026-11-06T13:38:42.534Z" }</pre>
+      </div>
+    </section>
+
+    <section class="section" id="data">
+      <h2>Data format</h2>
+      <table class="spec">
+        <tr><th><code>id</code></th><td>Integer. Increases with every saved position.</td></tr>
+        <tr><th><code>session_id</code></th><td>Text. The session the position belongs to.</td></tr>
+        <tr><th><code>lat</code>, <code>lng</code></th><td>Decimal degrees, WGS 84.</td></tr>
+        <tr><th><code>accuracy</code></th><td>Metres, or <code>null</code> if the device did not report it.</td></tr>
+        <tr><th><code>speed</code></th><td>Metres per second, or <code>null</code> if the device did not report it.</td></tr>
+        <tr><th><code>timestamp</code></th><td>ISO 8601 in UTC, for the time of the GPS fix.</td></tr>
+      </table>
+    </section>
+
+    <section class="section" id="errors">
+      <h2>Errors</h2>
+      <p>Errors are JSON, in the form <code>{ "error": "message" }</code>.</p>
+      <table class="spec">
+        <tr><th>400</th><td>Invalid input, such as a latitude out of range or a limit that is not a whole number from 1 to 1000.</td></tr>
+        <tr><th>401</th><td>Missing, invalid or revoked credentials.</td></tr>
+        <tr><th>403</th><td>Credentials that belong to another session, or a share token used to write.</td></tr>
+        <tr><th>404</th><td>Nothing recorded yet, or an unknown endpoint.</td></tr>
+        <tr><th>405</th><td>The method is not allowed on this endpoint.</td></tr>
+        <tr><th>413</th><td>The request body is larger than 16 KB.</td></tr>
+      </table>
+    </section>
+
+    <section class="section" id="notes">
+      <h2>Notes</h2>
+      <p>Only SHA-256 hashes of keys and share tokens are stored. Positions are stored until the database file is deleted. Requests are not rate limited in this version, so put the server behind HTTPS and a proxy if it is exposed to the internet.</p>
+    </section>
+  </main>
+
+  <script type="module" src="js/docs.js"></script>
+</body>
+</html>

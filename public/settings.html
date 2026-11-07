@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c061a">
+  <title>Settings | Columbus</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="page">
+
+  <header class="page-head">
+    <a class="back" href="index.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      Back to Columbus Live Map
+    </a>
+  </header>
+
+  <main class="page-body">
+    <h1 class="page-title">Columbus Settings</h1>
+
+    <!-- Cloud Synchronization Section -->
+    <section class="section" aria-labelledby="supabase-heading">
+      <h2 id="supabase-heading">Supabase Cloud Sync</h2>
+      <p>Columbus live locations and fleet positions are synchronized to your Supabase PostgreSQL cluster in real-time.</p>
+      <dl class="facts">
+        <dt>Status</dt>
+        <dd><span class="badge" data-tone="live"><span class="led" aria-hidden="true"></span><span id="supabase-status-badge">Connected</span></span></dd>
+        <dt>Project Ref</dt>
+        <dd><code>fdupudjnsxrwldzsukfn</code></dd>
+        <dt>Tables</dt>
+        <dd><code>columbus_locations</code>, <code>columbus_sessions</code></dd>
+      </dl>
+    </section>
+
+    <!-- Vehicle & Pointer Customization Section -->
+    <section class="section" aria-labelledby="custom-heading">
+      <h2 id="custom-heading">Vehicle &amp; Pointer Customization</h2>
+      <p>Customize the symbol and color used for your live location on the Columbus tracking map and shared live streams.</p>
+
+      <div class="customizer-box">
+        <div class="customizer-preview" id="preview-container" aria-label="Live marker preview">
+          <div id="marker-preview-icon" style="transform: scale(1.3); display: flex; align-items: center; justify-content: center;"></div>
+        </div>
+
+        <div class="customizer-controls">
+          <div class="customizer-row">
+            <span class="customizer-label">Marker Symbol</span>
+            <div class="seg" role="group" aria-label="Marker symbol type">
+              <button id="set-symbol-car" type="button" aria-pressed="true">🚗 Car</button>
+              <button id="set-symbol-arrow" type="button" aria-pressed="false">🧭 Pointer Arrow</button>
+            </div>
+          </div>
+
+          <div class="customizer-row">
+            <span class="customizer-label">Color Theme</span>
+            <div class="marker-swatches" id="settings-swatches" title="Choose Vehicle / Pointer Color">
+              <button type="button" class="color-swatch" data-color="white" style="background: #ffffff; border-color: #cbd5e1;" title="Pure White"></button>
+              <button type="button" class="color-swatch active" data-color="orange" style="background: #f97316;" title="Sport Orange"></button>
+              <button type="button" class="color-swatch" data-color="teal" style="background: #0d9488;" title="Teal Green"></button>
+              <button type="button" class="color-swatch" data-color="green" style="background: #10b981;" title="Emerald Green"></button>
+              <button type="button" class="color-swatch" data-color="red" style="background: #ef4444;" title="Crimson Red"></button>
+              <button type="button" class="color-swatch" data-color="purple" style="background: #8b5cf6;" title="Royal Purple"></button>
+              <button type="button" class="color-swatch" data-color="black" style="background: #1e293b;" title="Stealth Black"></button>
+            </div>
+            <span id="selected-theme-name" class="theme-name-badge">Sport Orange</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Session Management Section -->
+    <section class="section" aria-labelledby="session-heading">
+      <h2 id="session-heading">Session</h2>
+      <p>Each tracking device possesses an API key. Authorized applications pass it in the <code>x-api-key</code> header.</p>
+      <dl class="facts">
+        <dt>Status</dt>
+        <dd><span id="key-badge" class="badge" data-tone="off"><span class="led" aria-hidden="true"></span><span id="key-status">Checking</span></span></dd>
+        <dt>Session id</dt>
+        <dd><code id="session-id">None yet</code></dd>
+        <dt>Created</dt>
+        <dd id="session-created">-</dd>
+      </dl>
+    </section>
+
+    <!-- API Key Section -->
+    <section class="section" aria-labelledby="key-heading">
+      <h2 id="key-heading">Device API Key</h2>
+      <p>Stored securely on this client device. The server records an immutable SHA-256 hash. Regenerate at any time if compromised.</p>
+      <div class="field">
+        <input id="key-field" type="text" readonly aria-label="API key" placeholder="No key on this device" spellcheck="false" autocomplete="off">
+        <button id="reveal" class="btn btn-quiet btn-sm" type="button">Show</button>
+        <button id="copy-key" class="btn btn-primary btn-sm" type="button">Copy</button>
+      </div>
+      <div class="actions-row">
+        <button id="generate" class="btn btn-primary btn-sm" type="button" hidden>Generate API Key</button>
+        <button id="regenerate" class="btn btn-quiet btn-sm" type="button" hidden>Regenerate Key</button>
+        <button id="revoke" class="btn btn-danger btn-sm" type="button" hidden>Revoke Key</button>
+      </div>
+    </section>
+
+    <!-- Share Link Section -->
+    <section class="section" aria-labelledby="share-heading">
+      <h2 id="share-heading">Public Live Stream Link</h2>
+      <p>Share this link with anyone to let them track your journey on a read-only live viewer map without providing access to your API key.</p>
+      <div class="field">
+        <input id="share-field" type="text" readonly aria-label="Share link" placeholder="Generate a key first" spellcheck="false">
+      </div>
+      <div class="actions-row">
+        <button id="share" class="btn btn-primary btn-sm" type="button">Open Share View</button>
+        <button id="copy-share" class="btn btn-quiet btn-sm" type="button">Copy Link</button>
+        <button id="reset-share" class="btn btn-danger btn-sm" type="button" hidden>Reset Link</button>
+      </div>
+    </section>
+
+    <!-- cURL Examples -->
+    <section class="section" aria-labelledby="examples-heading">
+      <h2 id="examples-heading">Developer Integration</h2>
+      <p>Direct commands to stream or inject coordinates into this Columbus tracking session.</p>
+
+      <h3 style="font-size: 15px; margin: 16px 0 6px; color: var(--purple-200);">Query Latest Telemetry Fix</h3>
+      <div class="copy">
+        <pre id="curl-latest"></pre>
+        <button class="btn btn-quiet btn-sm" type="button" data-copy="curl-latest">Copy</button>
+      </div>
+
+      <h3 style="font-size: 15px; margin: 16px 0 6px; color: var(--purple-200);">Push External Position Packet</h3>
+      <div class="copy">
+        <pre id="curl-post"></pre>
+        <button class="btn btn-quiet btn-sm" type="button" data-copy="curl-post">Copy</button>
+      </div>
+    </section>
+
+    <p id="notice" class="notice" role="status" aria-live="polite"></p>
+  </main>
+
+  <script type="module" src="js/settings.js"></script>
+</body>
+</html>
