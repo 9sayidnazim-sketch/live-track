@@ -429,6 +429,7 @@ export function createApp({ dbPath, publicDir }) {
     ['GET', /^\/api\/search$/, searchProxy],
     ['GET', /^\/api\/route$/, routeProxy],
     ['GET', /^\/route\/v1\/driving\/(.+)$/, routeProxy],
+    ['GET', /^\/api\/route\/v1\/driving\/(.+)$/, routeProxy],
     ['POST', /^\/api\/sessions$/, createSession],
     ['POST', /^\/api\/location$/, postLocation],
     ['GET', /^\/api\/location\/latest$/, latestLocation],

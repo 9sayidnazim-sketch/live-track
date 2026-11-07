@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/route/(.*)", "destination": "/api/route/$1" },
+    { "source": "/settings", "destination": "/settings.html" },
+    { "source": "/live", "destination": "/live.html" },
+    { "source": "/api-docs", "destination": "/api.html" }
+  ]
+}
